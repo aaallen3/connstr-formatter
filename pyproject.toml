@@ -1,0 +1,18 @@
+[project]
+name = "connstr-formatter"
+version = "0.1.0"
+description = "Normalize messy database connection strings into a canonical form"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "aaallen3" }]
+
+[project.scripts]
+connstr-format = "connstr_format.cli:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
