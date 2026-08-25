@@ -12,9 +12,9 @@ fields mapped to one canonical name and printed in a fixed order
 sorted alphabetically). Two connection strings that mean the same thing
 come out identical.
 
-Currently handled: semicolon-delimited `key=value` strings (the ODBC /
-ADO.NET / OLE DB style used by SQL Server and MySQL's .NET connector).
-URL-style strings (`postgres://user:pass@host/db`) aren't supported yet.
+Two input styles are handled: semicolon-delimited `key=value` strings (the
+ODBC / ADO.NET / OLE DB style used by SQL Server and MySQL's .NET connector)
+and URL-style strings (`postgres://user:pass@host/db`, `jdbc:sqlserver://...`).
 
 ## Usage
 
@@ -28,10 +28,22 @@ normalize("Server=myServer;UID=sa;PWD=hunter2;Database=myDb")
 
 normalize("data source=myServer; database=myDb; user id=sa; pwd=hunter2")
 # 'host=myServer;database=myDb;user=sa;password=hunter2'
+
+normalize("postgres://sa:hunter2@myServer:5432/myDb")
+# 'host=myServer;port=5432;database=myDb;user=sa;password=hunter2'
 ```
 
-Note both inputs above normalize to the same output despite different key
-spellings, casing, and order.
+Note all three inputs above normalize to the same fields despite different
+key spellings, casing, order, and even a completely different string format.
+
+URL-style parsing also accepts a `jdbc:` prefix and, since some JDBC drivers
+(SQL Server's among them) put connection properties after the host as
+`;key=value` pairs instead of a query string, both forms work:
+
+```python
+normalize("jdbc:postgresql://myServer:5432/myDb?user=sa&password=hunter2")
+normalize("jdbc:sqlserver://myServer:1433;databaseName=myDb;user=sa;password=hunter2")
+```
 
 From the command line, reading one connection string per line:
 

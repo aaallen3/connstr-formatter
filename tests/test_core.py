@@ -80,5 +80,57 @@ class NormalizeDuplicateKeyTests(unittest.TestCase):
         self.assertEqual(normalize(raw), "host=db2")
 
 
+class NormalizeUrlStyleTests(unittest.TestCase):
+    def test_basic_postgres_url(self):
+        raw = "postgres://sa:hunter2@db1:5432/orders"
+        self.assertEqual(
+            normalize(raw), "host=db1;port=5432;database=orders;user=sa;password=hunter2"
+        )
+
+    def test_user_without_password_and_no_port(self):
+        raw = "mysql://app@db1/orders"
+        self.assertEqual(normalize(raw), "host=db1;database=orders;user=app")
+
+    def test_percent_encoded_password_is_decoded(self):
+        raw = "postgres://sa:hun%40ter2@db1/orders"
+        self.assertEqual(normalize(raw), "host=db1;database=orders;user=sa;password=hun@ter2")
+
+    def test_query_string_params_become_sorted_extras(self):
+        raw = "postgres://sa:pw@db1/orders?sslmode=require"
+        self.assertEqual(
+            normalize(raw),
+            "host=db1;database=orders;user=sa;password=pw;sslmode=require",
+        )
+
+    def test_query_string_can_carry_user_and_password(self):
+        raw = "jdbc:postgresql://db1:5432/orders?user=sa&password=hunter2"
+        self.assertEqual(
+            normalize(raw), "host=db1;port=5432;database=orders;user=sa;password=hunter2"
+        )
+
+    def test_jdbc_sqlserver_semicolon_params(self):
+        raw = "jdbc:sqlserver://db1:1433;databaseName=orders;user=sa;password=hunter2"
+        self.assertEqual(
+            normalize(raw), "host=db1;port=1433;database=orders;user=sa;password=hunter2"
+        )
+
+    def test_bracketed_ipv6_host_with_port(self):
+        raw = "postgres://[::1]:5432/orders"
+        self.assertEqual(normalize(raw), "host=::1;port=5432;database=orders")
+
+    def test_no_path_means_no_database_field(self):
+        raw = "postgres://db1:5432"
+        self.assertEqual(normalize(raw), "host=db1;port=5432")
+
+    def test_no_host_means_no_host_field(self):
+        raw = "postgres:///orders"
+        self.assertEqual(normalize(raw), "database=orders")
+
+    def test_url_style_and_odbc_style_can_normalize_identically(self):
+        url = "postgres://sa:hunter2@db1:5432/orders"
+        odbc = "Server=db1;Port=5432;UID=sa;PWD=hunter2;Database=orders"
+        self.assertEqual(normalize(url), normalize(odbc))
+
+
 if __name__ == "__main__":
     unittest.main()
