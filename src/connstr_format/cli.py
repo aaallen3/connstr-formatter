@@ -21,12 +21,17 @@ def main(argv=None):
         default="-",
         help="file to write to; '-' for stdout (default)",
     )
+    parser.add_argument(
+        "--mask-password",
+        action="store_true",
+        help="replace password values with a fixed placeholder instead of printing them",
+    )
     args = parser.parse_args(argv)
 
     in_stream = sys.stdin if args.input == "-" else open(args.input, "r", encoding="utf-8")
     out_stream = sys.stdout if args.output == "-" else open(args.output, "w", encoding="utf-8")
     try:
-        for line in normalize_stream(in_stream):
+        for line in normalize_stream(in_stream, mask_password=args.mask_password):
             out_stream.write(line + "\n")
     finally:
         if in_stream is not sys.stdin:

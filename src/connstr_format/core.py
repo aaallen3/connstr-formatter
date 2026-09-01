@@ -48,6 +48,11 @@ _ALIASES = {
 # as an "extra" field and emitted afterward, sorted by key.
 _CANONICAL_ORDER = ("host", "port", "database", "user", "password")
 
+# Fixed placeholder for mask_password=True. Fixed width rather than
+# something like "*" * len(password) so the output can't leak the
+# password's length to anyone reading the masked log.
+_PASSWORD_MASK = "***"
+
 # Matches the scheme of a URL-style connection string, with an optional
 # "jdbc:" prefix (jdbc:postgresql://..., jdbc:sqlserver://...).
 _URL_SCHEME_RE = re.compile(r"^(?:jdbc:)?[a-zA-Z][a-zA-Z0-9+.-]*://")
@@ -189,12 +194,16 @@ def _parse_url_style(raw):
     return fields, extras
 
 
-def normalize(raw):
+def normalize(raw, mask_password=False):
     """Return a canonical form of a single connection string.
 
     Accepts either ODBC-style 'key=value;key=value' strings or URL-style
     'scheme://...' strings (including a 'jdbc:' prefix); see the module
     docstring for examples of each.
+
+    If `mask_password` is true and a password field is present, its value
+    is replaced with a fixed placeholder instead of the real value, so the
+    output is safe to write to a log.
     """
     raw = raw.strip()
     if _URL_SCHEME_RE.match(raw):
@@ -202,6 +211,9 @@ def normalize(raw):
     else:
         fields, extras = {}, {}
         _parse_keyvalue_pairs(raw, fields, extras)
+
+    if mask_password and "password" in fields:
+        fields["password"] = _PASSWORD_MASK
 
     parts = [f"{key}={fields[key]}" for key in _CANONICAL_ORDER if key in fields]
     parts += [f"{key}={extras[key]}" for key in sorted(extras)]

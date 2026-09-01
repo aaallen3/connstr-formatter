@@ -12,14 +12,15 @@ one line at a time from the OS rather than reading it all upfront.
 from .core import normalize
 
 
-def normalize_stream(lines, skip_blank=True):
+def normalize_stream(lines, skip_blank=True, mask_password=False):
     """Yield normalize(line) for each line in `lines`.
 
     `lines` is consumed lazily, so passing a file object here (rather than
-    file.readlines()) is what keeps this streaming.
+    file.readlines()) is what keeps this streaming. `mask_password` is
+    forwarded to `normalize` on every line; see its docstring.
     """
     for line in lines:
         line = line.rstrip("\n").rstrip("\r")
         if skip_blank and not line.strip():
             continue
-        yield normalize(line)
+        yield normalize(line, mask_password=mask_password)

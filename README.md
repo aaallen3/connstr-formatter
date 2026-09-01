@@ -63,6 +63,25 @@ Or via stdin/stdout, which is how it's meant to be used on large files:
 $ cat connections.txt | connstr-format > normalized.txt
 ```
 
+## Password masking
+
+Normalized output includes the password in plain text by default, which is
+fine for feeding into another tool but not for pasting into a log. Pass
+`mask_password=True` (or `--mask-password` on the CLI) to replace it with a
+fixed placeholder instead:
+
+```python
+normalize("Server=db1;UID=sa;PWD=hunter2;Database=orders", mask_password=True)
+# 'host=db1;database=orders;user=sa;password=***'
+```
+
+```sh
+$ connstr-format --mask-password connections.txt
+```
+
+The placeholder is a constant string, not `"*" * len(password)`, so the
+masked output doesn't leak the password's length either.
+
 ## Streaming
 
 `connections.txt` above could be a two-line file or a two-million-line

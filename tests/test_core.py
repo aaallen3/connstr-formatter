@@ -80,6 +80,35 @@ class NormalizeDuplicateKeyTests(unittest.TestCase):
         self.assertEqual(normalize(raw), "host=db2")
 
 
+class NormalizeMaskPasswordTests(unittest.TestCase):
+    def test_password_is_replaced_with_placeholder(self):
+        raw = "Server=db1;UID=sa;PWD=hunter2;Database=orders"
+        self.assertEqual(
+            normalize(raw, mask_password=True),
+            "host=db1;database=orders;user=sa;password=***",
+        )
+
+    def test_placeholder_does_not_reveal_password_length(self):
+        short = normalize("Server=db1;PWD=ab", mask_password=True)
+        long = normalize("Server=db1;PWD=a-much-longer-password", mask_password=True)
+        self.assertEqual(short.split(";")[-1], long.split(";")[-1])
+
+    def test_no_password_field_means_no_change(self):
+        raw = "Server=db1;UID=sa;Database=orders"
+        self.assertEqual(normalize(raw, mask_password=True), normalize(raw))
+
+    def test_mask_password_false_is_the_default(self):
+        raw = "Server=db1;PWD=hunter2"
+        self.assertEqual(normalize(raw), "host=db1;password=hunter2")
+
+    def test_url_style_password_is_also_masked(self):
+        raw = "postgres://sa:hunter2@db1/orders"
+        self.assertEqual(
+            normalize(raw, mask_password=True),
+            "host=db1;database=orders;user=sa;password=***",
+        )
+
+
 class NormalizeUrlStyleTests(unittest.TestCase):
     def test_basic_postgres_url(self):
         raw = "postgres://sa:hunter2@db1:5432/orders"
