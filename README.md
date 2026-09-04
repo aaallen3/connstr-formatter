@@ -82,6 +82,31 @@ $ connstr-format --mask-password connections.txt
 The placeholder is a constant string, not `"*" * len(password)`, so the
 masked output doesn't leak the password's length either.
 
+## Validation
+
+Malformed segments (no `=`, or a blank key) are silently dropped by
+`normalize`, matching how most ODBC drivers behave. If you'd rather know
+about those instead of quietly losing fields, use `normalize_with_issues`,
+which returns the normalized string alongside a list describing what it
+had to skip:
+
+```python
+from connstr_format import normalize_with_issues
+
+normalize_with_issues("Server=db1;notapair;=value;Database=orders")
+# ('host=db1;database=orders', ["missing '=': 'notapair'", "blank key: '=value'"])
+```
+
+From the command line, `--validate` reports malformed entries line by line
+instead of printing normalized output, and exits with status 1 if it found
+any:
+
+```sh
+$ connstr-format --validate connections.txt
+line 3: Server=db1;notapair;Database=orders
+  missing '=': 'notapair'
+```
+
 ## Streaming
 
 `connections.txt` above could be a two-line file or a two-million-line

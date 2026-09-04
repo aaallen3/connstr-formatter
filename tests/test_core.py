@@ -1,6 +1,6 @@
 import unittest
 
-from connstr_format import normalize
+from connstr_format import normalize, normalize_with_issues
 
 
 class NormalizeBasicsTests(unittest.TestCase):
@@ -159,6 +159,50 @@ class NormalizeUrlStyleTests(unittest.TestCase):
         url = "postgres://sa:hunter2@db1:5432/orders"
         odbc = "Server=db1;Port=5432;UID=sa;PWD=hunter2;Database=orders"
         self.assertEqual(normalize(url), normalize(odbc))
+
+
+class NormalizeWithIssuesTests(unittest.TestCase):
+    def test_well_formed_input_has_no_issues(self):
+        value, issues = normalize_with_issues("Server=db1;UID=sa;Database=orders")
+        self.assertEqual(value, "host=db1;database=orders;user=sa")
+        self.assertEqual(issues, [])
+
+    def test_result_matches_normalize_for_well_formed_input(self):
+        raw = "Server=db1;UID=sa;PWD=hunter2;Database=orders"
+        value, _ = normalize_with_issues(raw)
+        self.assertEqual(value, normalize(raw))
+
+    def test_pair_without_equals_is_reported(self):
+        value, issues = normalize_with_issues("Server=db1;notapair;Database=orders")
+        self.assertEqual(value, "host=db1;database=orders")
+        self.assertEqual(issues, ["missing '=': 'notapair'"])
+
+    def test_pair_with_blank_key_is_reported(self):
+        value, issues = normalize_with_issues("Server=db1;=value;Database=orders")
+        self.assertEqual(value, "host=db1;database=orders")
+        self.assertEqual(issues, ["blank key: '=value'"])
+
+    def test_multiple_malformed_segments_are_all_reported(self):
+        raw = "Server=db1;notapair;=value;Database=orders"
+        _, issues = normalize_with_issues(raw)
+        self.assertEqual(issues, ["missing '=': 'notapair'", "blank key: '=value'"])
+
+    def test_mask_password_still_applies(self):
+        value, issues = normalize_with_issues("Server=db1;PWD=hunter2;bad", mask_password=True)
+        self.assertEqual(value, "host=db1;password=***")
+        self.assertEqual(issues, ["missing '=': 'bad'"])
+
+    def test_malformed_query_param_in_url_style_is_reported(self):
+        raw = "postgres://sa:pw@db1/orders?=oops&sslmode=require"
+        value, issues = normalize_with_issues(raw)
+        self.assertEqual(value, "host=db1;database=orders;user=sa;password=pw;sslmode=require")
+        self.assertEqual(issues, ["blank key: '=oops'"])
+
+    def test_malformed_jdbc_tail_param_is_reported(self):
+        raw = "jdbc:sqlserver://db1:1433;databaseName=orders;notapair;user=sa"
+        value, issues = normalize_with_issues(raw)
+        self.assertEqual(value, "host=db1;port=1433;database=orders;user=sa")
+        self.assertEqual(issues, ["missing '=': 'notapair'"])
 
 
 if __name__ == "__main__":

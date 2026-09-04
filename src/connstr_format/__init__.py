@@ -1,4 +1,4 @@
-from .core import normalize
-from .stream import normalize_stream
+from .core import normalize, normalize_with_issues
+from .stream import normalize_stream, validate_stream
 
-__all__ = ["normalize", "normalize_stream"]
+__all__ = ["normalize", "normalize_with_issues", "normalize_stream", "validate_stream"]

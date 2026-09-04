@@ -93,10 +93,15 @@ def _unquote(value):
     return value
 
 
-def _assign(key, value, fields, extras):
-    """Route one already-decoded key=value pair into fields or extras."""
+def _assign(key, value, fields, extras, errors, segment):
+    """Route one already-decoded key=value pair into fields or extras.
+
+    `segment` is the original text the pair came from, used only to
+    describe a blank key in `errors`.
+    """
     key = key.strip().lower()
     if not key:
+        errors.append(f"blank key: {segment!r}")
         return
     canonical_key = _ALIASES.get(key, key)
     if canonical_key in _CANONICAL_ORDER:
@@ -105,20 +110,24 @@ def _assign(key, value, fields, extras):
         extras[canonical_key] = value
 
 
-def _parse_keyvalue_pairs(raw, fields, extras):
+def _parse_keyvalue_pairs(raw, fields, extras, errors):
     """Parse ';'-delimited key=value pairs into fields/extras in place.
 
     Unknown keys are kept (lowercased) rather than dropped, since a field
     this module doesn't recognize might still matter to whoever reads the
-    output. Malformed pairs (no '=', or a blank key) are silently skipped,
-    matching how most ODBC drivers behave.
+    output. Malformed pairs (no '=', or a blank key) are skipped and
+    described in `errors`, matching how most ODBC drivers behave at parse
+    time but without silently losing the detail of what was wrong.
     """
     for pair in _split_pairs(raw):
         pair = pair.strip()
-        if not pair or "=" not in pair:
+        if not pair:
+            continue
+        if "=" not in pair:
+            errors.append(f"missing '=': {pair!r}")
             continue
         key, _, value = pair.partition("=")
-        _assign(key, _unquote(value.strip()), fields, extras)
+        _assign(key, _unquote(value.strip()), fields, extras, errors, pair)
 
 
 def _split_host_port(hostinfo):
@@ -138,7 +147,7 @@ def _split_host_port(hostinfo):
     return hostinfo, None
 
 
-def _parse_url_style(raw):
+def _parse_url_style(raw, errors):
     """Parse a 'scheme://[user[:pass]@]host[:port][/db][?query]' string.
 
     Also accepts an optional leading 'jdbc:' and, after the authority, a
@@ -187,11 +196,36 @@ def _parse_url_style(raw):
 
     if remainder.startswith("?"):
         for key, value in parse_qsl(remainder[1:], keep_blank_values=True):
-            _assign(key, value, fields, extras)
+            _assign(key, value, fields, extras, errors, f"{key}={value}")
     elif remainder.startswith(";"):
-        _parse_keyvalue_pairs(remainder[1:], fields, extras)
+        _parse_keyvalue_pairs(remainder[1:], fields, extras, errors)
 
     return fields, extras
+
+
+def normalize_with_issues(raw, mask_password=False):
+    """Like `normalize`, but also return a list describing malformed entries.
+
+    Where `normalize` silently drops a segment it can't parse (no '=', or a
+    blank key), this returns a `(normalized, issues)` pair where `issues`
+    is a list of human-readable strings, one per dropped segment, empty if
+    the input was well-formed. Useful for a validation pass over a file
+    that would otherwise just quietly lose fields.
+    """
+    raw = raw.strip()
+    errors = []
+    if _URL_SCHEME_RE.match(raw):
+        fields, extras = _parse_url_style(raw, errors)
+    else:
+        fields, extras = {}, {}
+        _parse_keyvalue_pairs(raw, fields, extras, errors)
+
+    if mask_password and "password" in fields:
+        fields["password"] = _PASSWORD_MASK
+
+    parts = [f"{key}={fields[key]}" for key in _CANONICAL_ORDER if key in fields]
+    parts += [f"{key}={extras[key]}" for key in sorted(extras)]
+    return ";".join(parts), errors
 
 
 def normalize(raw, mask_password=False):
@@ -204,17 +238,9 @@ def normalize(raw, mask_password=False):
     If `mask_password` is true and a password field is present, its value
     is replaced with a fixed placeholder instead of the real value, so the
     output is safe to write to a log.
+
+    Malformed segments (no '=', or a blank key) are dropped silently; use
+    `normalize_with_issues` if you need to know about those instead of
+    losing them quietly.
     """
-    raw = raw.strip()
-    if _URL_SCHEME_RE.match(raw):
-        fields, extras = _parse_url_style(raw)
-    else:
-        fields, extras = {}, {}
-        _parse_keyvalue_pairs(raw, fields, extras)
-
-    if mask_password and "password" in fields:
-        fields["password"] = _PASSWORD_MASK
-
-    parts = [f"{key}={fields[key]}" for key in _CANONICAL_ORDER if key in fields]
-    parts += [f"{key}={extras[key]}" for key in sorted(extras)]
-    return ";".join(parts)
+    return normalize_with_issues(raw, mask_password=mask_password)[0]

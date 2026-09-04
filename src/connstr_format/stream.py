@@ -9,7 +9,7 @@ single line, not to the file size, because iterating a file object pulls
 one line at a time from the OS rather than reading it all upfront.
 """
 
-from .core import normalize
+from .core import normalize, normalize_with_issues
 
 
 def normalize_stream(lines, skip_blank=True, mask_password=False):
@@ -24,3 +24,21 @@ def normalize_stream(lines, skip_blank=True, mask_password=False):
         if skip_blank and not line.strip():
             continue
         yield normalize(line, mask_password=mask_password)
+
+
+def validate_stream(lines, skip_blank=True):
+    """Yield (line_number, line, issues) for each line with malformed entries.
+
+    Lines that parse cleanly are not yielded at all, so consuming this is
+    naturally "show me what's wrong" rather than a line-by-line echo of the
+    whole file. `line_number` is 1-based and counts blank lines even when
+    `skip_blank` causes them to be skipped, so it lines up with a text
+    editor's view of the file.
+    """
+    for line_number, line in enumerate(lines, start=1):
+        line = line.rstrip("\n").rstrip("\r")
+        if skip_blank and not line.strip():
+            continue
+        _, issues = normalize_with_issues(line)
+        if issues:
+            yield line_number, line, issues
