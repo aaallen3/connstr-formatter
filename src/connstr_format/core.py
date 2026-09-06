@@ -93,7 +93,7 @@ def _unquote(value):
     return value
 
 
-def _assign(key, value, fields, extras, errors, segment):
+def _assign(key, value, fields, extras, errors, segment, aliases):
     """Route one already-decoded key=value pair into fields or extras.
 
     `segment` is the original text the pair came from, used only to
@@ -103,14 +103,14 @@ def _assign(key, value, fields, extras, errors, segment):
     if not key:
         errors.append(f"blank key: {segment!r}")
         return
-    canonical_key = _ALIASES.get(key, key)
+    canonical_key = aliases.get(key, key)
     if canonical_key in _CANONICAL_ORDER:
         fields[canonical_key] = value
     else:
         extras[canonical_key] = value
 
 
-def _parse_keyvalue_pairs(raw, fields, extras, errors):
+def _parse_keyvalue_pairs(raw, fields, extras, errors, aliases):
     """Parse ';'-delimited key=value pairs into fields/extras in place.
 
     Unknown keys are kept (lowercased) rather than dropped, since a field
@@ -127,7 +127,7 @@ def _parse_keyvalue_pairs(raw, fields, extras, errors):
             errors.append(f"missing '=': {pair!r}")
             continue
         key, _, value = pair.partition("=")
-        _assign(key, _unquote(value.strip()), fields, extras, errors, pair)
+        _assign(key, _unquote(value.strip()), fields, extras, errors, pair, aliases)
 
 
 def _split_host_port(hostinfo):
@@ -147,7 +147,7 @@ def _split_host_port(hostinfo):
     return hostinfo, None
 
 
-def _parse_url_style(raw, errors):
+def _parse_url_style(raw, errors, aliases):
     """Parse a 'scheme://[user[:pass]@]host[:port][/db][?query]' string.
 
     Also accepts an optional leading 'jdbc:' and, after the authority, a
@@ -196,14 +196,58 @@ def _parse_url_style(raw, errors):
 
     if remainder.startswith("?"):
         for key, value in parse_qsl(remainder[1:], keep_blank_values=True):
-            _assign(key, value, fields, extras, errors, f"{key}={value}")
+            _assign(key, value, fields, extras, errors, f"{key}={value}", aliases)
     elif remainder.startswith(";"):
-        _parse_keyvalue_pairs(remainder[1:], fields, extras, errors)
+        _parse_keyvalue_pairs(remainder[1:], fields, extras, errors, aliases)
 
     return fields, extras
 
 
-def normalize_with_issues(raw, mask_password=False):
+def parse_alias_config(text):
+    """Parse the contents of an alias config file into an alias dict.
+
+    Each non-blank, non-comment line is 'spelling = canonical', e.g.:
+
+        # extra spellings seen in this environment's configs
+        datasource = host
+        instance name = host
+        authid = user
+        secret = password
+        catalog = database
+
+    Comments start with '#' and run to the end of the line; blank lines
+    are ignored. Both sides are stripped and lowercased, matching how the
+    built-in alias table is keyed. Raises ValueError, with the offending
+    line number, if a line has no '=' or either side is blank.
+    """
+    aliases = {}
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        line = line.partition("#")[0].strip()
+        if not line:
+            continue
+        if "=" not in line:
+            raise ValueError(f"line {line_number}: missing '=': {line!r}")
+        spelling, _, canonical = line.partition("=")
+        spelling = spelling.strip().lower()
+        canonical = canonical.strip().lower()
+        if not spelling or not canonical:
+            raise ValueError(f"line {line_number}: blank alias or canonical name: {line!r}")
+        aliases[spelling] = canonical
+    return aliases
+
+
+def load_alias_map(path):
+    """Read an alias config file from `path` and return the alias dict.
+
+    See `parse_alias_config` for the file format. The result is meant to
+    be passed as `aliases` to `normalize`, `normalize_with_issues`, or the
+    streaming functions in `connstr_format.stream`.
+    """
+    with open(path, "r", encoding="utf-8") as f:
+        return parse_alias_config(f.read())
+
+
+def normalize_with_issues(raw, mask_password=False, aliases=None):
     """Like `normalize`, but also return a list describing malformed entries.
 
     Where `normalize` silently drops a segment it can't parse (no '=', or a
@@ -213,12 +257,13 @@ def normalize_with_issues(raw, mask_password=False):
     that would otherwise just quietly lose fields.
     """
     raw = raw.strip()
+    resolved_aliases = _ALIASES if not aliases else {**_ALIASES, **aliases}
     errors = []
     if _URL_SCHEME_RE.match(raw):
-        fields, extras = _parse_url_style(raw, errors)
+        fields, extras = _parse_url_style(raw, errors, resolved_aliases)
     else:
         fields, extras = {}, {}
-        _parse_keyvalue_pairs(raw, fields, extras, errors)
+        _parse_keyvalue_pairs(raw, fields, extras, errors, resolved_aliases)
 
     if mask_password and "password" in fields:
         fields["password"] = _PASSWORD_MASK
@@ -228,7 +273,7 @@ def normalize_with_issues(raw, mask_password=False):
     return ";".join(parts), errors
 
 
-def normalize(raw, mask_password=False):
+def normalize(raw, mask_password=False, aliases=None):
     """Return a canonical form of a single connection string.
 
     Accepts either ODBC-style 'key=value;key=value' strings or URL-style
@@ -239,8 +284,13 @@ def normalize(raw, mask_password=False):
     is replaced with a fixed placeholder instead of the real value, so the
     output is safe to write to a log.
 
+    `aliases`, if given, is a dict of lowercased spelling to lowercased
+    canonical name (see `load_alias_map`) that is layered on top of the
+    built-in alias table, letting callers recognize additional spellings
+    without forking this module.
+
     Malformed segments (no '=', or a blank key) are dropped silently; use
     `normalize_with_issues` if you need to know about those instead of
     losing them quietly.
     """
-    return normalize_with_issues(raw, mask_password=mask_password)[0]
+    return normalize_with_issues(raw, mask_password=mask_password, aliases=aliases)[0]

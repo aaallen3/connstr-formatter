@@ -107,6 +107,45 @@ line 3: Server=db1;notapair;Database=orders
   missing '=': 'notapair'
 ```
 
+## Custom aliases
+
+The built-in alias table covers the spellings this project has actually run
+into, but a given environment can have its own house style, or a
+vendor-specific key that isn't in that table. Rather than editing the
+source, point `normalize` at an alias config:
+
+```python
+from connstr_format import normalize, load_alias_map
+
+aliases = load_alias_map("aliases.conf")
+normalize("datasource=db1;secret=hunter2", aliases=aliases)
+# 'host=db1;password=hunter2'
+```
+
+The config file is plain text, one `spelling = canonical` mapping per
+line, `#` for comments:
+
+```
+# extra spellings seen in this environment's configs
+datasource = host
+instance name = host
+authid = user
+secret = password
+catalog = database
+```
+
+Entries here are layered on top of the built-in table rather than
+replacing it, so `Server=`/`UID=`/etc. keep working alongside whatever you
+add. The canonical name on the right doesn't have to be one of the five
+known fields either - mapping an alias to a name outside that set just
+makes it show up as an extra field, sorted in with the others.
+
+From the command line, `--alias-config` takes the same file:
+
+```sh
+$ connstr-format --alias-config aliases.conf connections.txt
+```
+
 ## Streaming
 
 `connections.txt` above could be a two-line file or a two-million-line

@@ -1,6 +1,6 @@
 import unittest
 
-from connstr_format import normalize, normalize_with_issues
+from connstr_format import normalize, normalize_with_issues, parse_alias_config
 
 
 class NormalizeBasicsTests(unittest.TestCase):
@@ -203,6 +203,82 @@ class NormalizeWithIssuesTests(unittest.TestCase):
         value, issues = normalize_with_issues(raw)
         self.assertEqual(value, "host=db1;port=1433;database=orders;user=sa")
         self.assertEqual(issues, ["missing '=': 'notapair'"])
+
+
+class ParseAliasConfigTests(unittest.TestCase):
+    def test_parses_simple_mappings(self):
+        text = "datasource = host\nsecret=password\n"
+        self.assertEqual(
+            parse_alias_config(text), {"datasource": "host", "secret": "password"}
+        )
+
+    def test_blank_lines_are_ignored(self):
+        text = "datasource = host\n\n\nsecret = password\n"
+        self.assertEqual(
+            parse_alias_config(text), {"datasource": "host", "secret": "password"}
+        )
+
+    def test_comments_are_stripped(self):
+        text = "# house style aliases\ndatasource = host  # trailing comment\n"
+        self.assertEqual(parse_alias_config(text), {"datasource": "host"})
+
+    def test_whole_line_comment_with_no_leading_whitespace(self):
+        text = "#datasource = host\nsecret = password\n"
+        self.assertEqual(parse_alias_config(text), {"secret": "password"})
+
+    def test_both_sides_are_lowercased_and_stripped(self):
+        text = "  DataSource  =  HOST  \n"
+        self.assertEqual(parse_alias_config(text), {"datasource": "host"})
+
+    def test_missing_equals_raises_value_error(self):
+        with self.assertRaisesRegex(ValueError, "line 2"):
+            parse_alias_config("datasource = host\nnotapair\n")
+
+    def test_blank_alias_raises_value_error(self):
+        with self.assertRaisesRegex(ValueError, "blank alias"):
+            parse_alias_config("= host\n")
+
+    def test_blank_canonical_raises_value_error(self):
+        with self.assertRaisesRegex(ValueError, "blank alias"):
+            parse_alias_config("datasource =\n")
+
+    def test_later_line_overrides_earlier_one_for_same_spelling(self):
+        text = "datasource = host\ndatasource = database\n"
+        self.assertEqual(parse_alias_config(text), {"datasource": "database"})
+
+
+class NormalizeCustomAliasTests(unittest.TestCase):
+    def test_custom_alias_maps_to_known_field(self):
+        aliases = {"datasource": "host", "secret": "password"}
+        raw = "datasource=db1;secret=hunter2"
+        self.assertEqual(normalize(raw, aliases=aliases), "host=db1;password=hunter2")
+
+    def test_custom_aliases_are_layered_on_top_of_built_ins(self):
+        aliases = {"secret": "password"}
+        raw = "Server=db1;secret=hunter2"
+        self.assertEqual(normalize(raw, aliases=aliases), "host=db1;password=hunter2")
+
+    def test_custom_alias_can_override_a_built_in_spelling(self):
+        aliases = {"server": "database"}
+        raw = "Server=myDb"
+        self.assertEqual(normalize(raw, aliases=aliases), "database=myDb")
+
+    def test_custom_alias_to_an_unknown_canonical_name_becomes_an_extra(self):
+        aliases = {"instance": "instance"}
+        raw = "Server=db1;Instance=prod"
+        self.assertEqual(normalize(raw, aliases=aliases), "host=db1;instance=prod")
+
+    def test_no_aliases_argument_behaves_like_before(self):
+        raw = "Server=db1;UID=sa"
+        self.assertEqual(normalize(raw, aliases=None), normalize(raw))
+
+    def test_custom_alias_applies_to_url_style_query_params(self):
+        aliases = {"pw": "password"}
+        raw = "postgres://sa@db1/orders?pw=hunter2"
+        self.assertEqual(
+            normalize(raw, aliases=aliases),
+            "host=db1;database=orders;user=sa;password=hunter2",
+        )
 
 
 if __name__ == "__main__":

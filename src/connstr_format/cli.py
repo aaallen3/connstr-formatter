@@ -1,6 +1,7 @@
 import argparse
 import sys
 
+from .core import load_alias_map
 from .stream import normalize_stream, validate_stream
 
 
@@ -31,14 +32,25 @@ def main(argv=None):
         action="store_true",
         help="report malformed entries instead of normalizing; exits 1 if any are found",
     )
+    parser.add_argument(
+        "--alias-config",
+        metavar="PATH",
+        help="file of extra 'spelling = canonical' alias lines, layered on top of the built-ins",
+    )
     args = parser.parse_args(argv)
+
+    try:
+        aliases = load_alias_map(args.alias_config) if args.alias_config else None
+    except (OSError, ValueError) as exc:
+        print(f"connstr-format: --alias-config: {exc}", file=sys.stderr)
+        return 2
 
     in_stream = sys.stdin if args.input == "-" else open(args.input, "r", encoding="utf-8")
     out_stream = sys.stdout if args.output == "-" else open(args.output, "w", encoding="utf-8")
     try:
         if args.validate:
-            return _run_validate(in_stream, out_stream)
-        for line in normalize_stream(in_stream, mask_password=args.mask_password):
+            return _run_validate(in_stream, out_stream, aliases)
+        for line in normalize_stream(in_stream, mask_password=args.mask_password, aliases=aliases):
             out_stream.write(line + "\n")
         return 0
     finally:
@@ -48,10 +60,10 @@ def main(argv=None):
             out_stream.close()
 
 
-def _run_validate(in_stream, out_stream):
+def _run_validate(in_stream, out_stream, aliases):
     """Print each malformed entry found in `in_stream`; return the exit status."""
     found_any = False
-    for line_number, line, issues in validate_stream(in_stream):
+    for line_number, line, issues in validate_stream(in_stream, aliases=aliases):
         found_any = True
         out_stream.write(f"line {line_number}: {line}\n")
         for issue in issues:
