@@ -6,6 +6,27 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "aaallen3" }]
+keywords = ["odbc", "connection-string", "database", "jdbc", "parser"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Database",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Text Processing :: Filters",
+]
+
+[project.urls]
+Homepage = "https://github.com/aaallen3/connstr-formatter"
+Repository = "https://github.com/aaallen3/connstr-formatter"
+Issues = "https://github.com/aaallen3/connstr-formatter/issues"
 
 [project.scripts]
 connstr-format = "connstr_format.cli:main"
