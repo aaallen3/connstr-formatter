@@ -55,6 +55,29 @@ class CliFileArgumentTests(unittest.TestCase):
                 self.assertEqual(f.read(), "host=db1;database=orders;user=sa\n")
 
 
+class CliFileErrorTests(unittest.TestCase):
+    def test_missing_input_file_returns_two_and_reports_error(self):
+        captured = io.StringIO()
+        with contextlib.redirect_stderr(captured):
+            status = main(["/no/such/connections.txt"])
+        self.assertEqual(status, 2)
+        self.assertIn("connstr-format:", captured.getvalue())
+        self.assertIn("connections.txt", captured.getvalue())
+
+    def test_unwritable_output_path_returns_two_and_reports_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            in_path = os.path.join(tmp, "connections.txt")
+            with open(in_path, "w", encoding="utf-8") as f:
+                f.write("Server=db1\n")
+            out_path = os.path.join(tmp, "no-such-dir", "out.txt")
+
+            captured = io.StringIO()
+            with contextlib.redirect_stderr(captured):
+                status = main([in_path, "-o", out_path])
+            self.assertEqual(status, 2)
+            self.assertIn("out.txt", captured.getvalue())
+
+
 class CliValidateTests(unittest.TestCase):
     def test_returns_zero_and_prints_nothing_when_all_lines_are_well_formed(self):
         stdin = io.StringIO("Server=db1;UID=sa\n")

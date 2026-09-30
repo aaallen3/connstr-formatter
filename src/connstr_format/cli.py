@@ -45,8 +45,19 @@ def main(argv=None):
         print(f"connstr-format: --alias-config: {exc}", file=sys.stderr)
         return 2
 
-    in_stream = sys.stdin if args.input == "-" else open(args.input, "r", encoding="utf-8")
-    out_stream = sys.stdout if args.output == "-" else open(args.output, "w", encoding="utf-8")
+    try:
+        in_stream = sys.stdin if args.input == "-" else open(args.input, "r", encoding="utf-8")
+    except OSError as exc:
+        print(f"connstr-format: {exc}", file=sys.stderr)
+        return 2
+    try:
+        out_stream = sys.stdout if args.output == "-" else open(args.output, "w", encoding="utf-8")
+    except OSError as exc:
+        # the input file is already open at this point and would otherwise leak
+        if in_stream is not sys.stdin:
+            in_stream.close()
+        print(f"connstr-format: {exc}", file=sys.stderr)
+        return 2
     try:
         if args.validate:
             return _run_validate(in_stream, out_stream, aliases)
